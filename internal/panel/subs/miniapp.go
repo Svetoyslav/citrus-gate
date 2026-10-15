@@ -31,6 +31,8 @@ func (h *Handler) miniApp(w http.ResponseWriter, r *http.Request, rest string) {
 		hd.Del("X-Frame-Options")
 		cfg, _ := h.cfg(r.Context())
 		h.servePage(w, r, cfg)
+	case r.Method == http.MethodPost && (rest == "citrus" || rest == "device-pay") && sameOrigin(r) && h.shop != nil:
+		h.miniCitrus(w, r, rest)
 	case r.Method == http.MethodPost && rest == "session" && sameOrigin(r):
 		h.miniAppSession(w, r)
 	case r.Method == http.MethodPost && rest == "reissue" && sameOrigin(r) && h.reissuer != nil:

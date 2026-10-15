@@ -28,3 +28,13 @@ Thumbs.db
 
 # release artifacts
 /release/
+
+# Citrus Gate local operations
+/state/
+*.dump
+*.tar.gz
+*.zip
+*.exe
+__pycache__/
+.node.env
+/work/

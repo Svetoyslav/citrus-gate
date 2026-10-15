@@ -271,6 +271,7 @@ func New(d Deps) (http.Handler, huma.API, error) {
 	h.registerNodeUpdates()
 	h.registerAPIKeys()
 	h.registerPayments()
+	h.registerCitrus()
 	h.registerPromocodes()
 	h.registerAddons()
 	h.registerAddonSources()

@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { useEffect, useState } from "react";
-import logo from "../assets/logo.webp";
+
 
 /**
  * The backdrop behind the glass, "dawn": warm light from the left — mandarin, rose,
@@ -61,5 +61,5 @@ function useIdle(): boolean {
 
 /** The painted mandarin on a transparent ground: it reads the same in every theme. */
 export function Logo({ size = 32 }: { size?: number }) {
-  return <img src={logo} width={size} height={size} alt="" aria-hidden decoding="async" draggable={false} className="shrink-0" />;
+  return <svg width={size} height={size} viewBox="0 0 40 40" fill="none" aria-hidden><rect x="3" y="3" width="34" height="34" rx="11" fill="#3949ab"/><path d="M27 12h-8a8 8 0 0 0 0 16h8M25 18v10" stroke="white" strokeWidth="3" strokeLinecap="round"/></svg>;
 }

@@ -21,3 +21,7 @@ These terms apply to mikan as a whole and to every copy and modified version of 
 - **Fonts:** Unbounded, Onest and JetBrains Mono, SIL Open Font License 1.1.
 
 The other libraries mikan builds with keep their own licenses, listed in `go.mod`, `web/package.json` and `installer/Cargo.toml`.
+
+## Modified version
+
+Citrus Gate, 2026-10-15. Unofficial modified version of Mikan, based on commit 262ee5ae68fb1713473ba65848b5b66d4e592774. New features, a separate name and logo, and source-build deployment scripts were added. Original attribution and GPL-3.0 are preserved. This build is not signed or supported by the Mikan project.

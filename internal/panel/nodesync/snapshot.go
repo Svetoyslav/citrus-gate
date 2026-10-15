@@ -8,10 +8,12 @@ import (
 	"strings"
 
 	"mikan/internal/panel/domain"
+	"mikan/internal/panel/features"
 	"mikan/internal/panel/filters"
 	"mikan/internal/panel/settings"
 	"mikan/internal/panel/store/db"
 	"mikan/internal/panel/torrent"
+	"mikan/internal/proto"
 )
 
 // snapshot is what the nodes' states and policies are built from: the same tables for
@@ -31,6 +33,7 @@ type snapshot struct {
 	counters map[int64]counterPos
 	torrent  torrent.Config
 	bans     map[int64]int64 // user → when the torrent blocker's ban ends (unix)
+	features features.Config
 	filters  filters.Config
 }
 
@@ -88,6 +91,21 @@ func (m *Manager) readSnapshot(ctx context.Context) (s *snapshot, err error) {
 	}
 	if s.torrent, err = torrent.Load(ctx, settings.New(q)); err != nil {
 		return nil, err
+	}
+	if s.features, err = features.Load(ctx, settings.New(q)); err != nil {
+		return nil, err
+	}
+	if s.features.GraceInbound > 0 {
+		valid := false
+		for _, in := range s.inbounds {
+			if in.ID == s.features.GraceInbound && in.Enabled != 0 {
+				t, e := proto.Parse(in.Config)
+				valid = e == nil && !proto.Shared(t.Type())
+			}
+		}
+		if !valid {
+			s.features.GraceInbound = 0
+		}
 	}
 	if s.filters, err = filters.Load(ctx, settings.New(q)); err != nil {
 		return nil, err

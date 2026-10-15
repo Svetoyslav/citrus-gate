@@ -20,7 +20,6 @@ import (
 	"mikan/internal/panel/store/db"
 	"mikan/internal/panel/subs"
 	"mikan/internal/panel/tgate"
-	"mikan/internal/release"
 )
 
 type NodeInfo struct {
@@ -265,7 +264,7 @@ func (h *handlers) createNode(ctx context.Context, in *createNodeInput) (*nodeKe
 		return nil, err
 	}
 	out := &nodeKeyOutput{}
-	out.Body.Node, out.Body.Key, out.Body.Command = h.viewNode(ctx, n, inbounds), key, release.JoinCommand(key)
+	out.Body.Node, out.Body.Key, out.Body.Command = h.viewNode(ctx, n, inbounds), key, "./citrus node '"+key+"'"
 	return out, nil
 }
 
@@ -394,7 +393,7 @@ func (h *handlers) rekeyNode(ctx context.Context, in *nodeIDInput) (*nodeKeyOutp
 		return nil, err
 	}
 	out := &nodeKeyOutput{}
-	out.Body.Node, out.Body.Key, out.Body.Command = h.viewNode(ctx, n, inbounds), key, release.JoinCommand(key)
+	out.Body.Node, out.Body.Key, out.Body.Command = h.viewNode(ctx, n, inbounds), key, "./citrus node '"+key+"'"
 	return out, nil
 }
 

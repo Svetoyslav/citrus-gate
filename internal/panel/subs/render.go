@@ -128,6 +128,7 @@ type Profile struct {
 	// (a port that is no number, a template that no longer parses): one broken inbound must
 	// not empty or fail the subscription of everyone.
 	Skip     func(in db.Inbound, err error)
+	External []ExternalProxy
 	Slot     db.Slot
 	Inbounds []db.Inbound // enabled and allowed for this user, in display order
 	Nodes    []Node       // enabled nodes in display order; inbounds of other nodes are skipped
@@ -203,6 +204,19 @@ func build(p Profile) ([]proxy, error) {
 			used[name] = true
 			out = append(out, proxy{name: name, node: n.ID, uri: c.URI, yaml: c.Mihomo})
 		}
+	}
+	for _, e := range p.External {
+		name := e.Name
+		for i := 2; used[name]; i++ {
+			name = e.Name + " " + strconv.Itoa(i)
+		}
+		used[name] = true
+		y := map[string]any{}
+		for k, v := range e.YAML {
+			y[k] = v
+		}
+		y["name"] = name
+		out = append(out, proxy{name: name, node: e.Node, uri: e.URI, yaml: y})
 	}
 	return out, nil
 }

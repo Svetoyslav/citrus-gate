@@ -1,0 +1,39 @@
+name: Citrus Gate checks
+on:
+  workflow_dispatch:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: citrus_test
+          POSTGRES_PASSWORD: citrus_test
+          POSTGRES_DB: citrus_test
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U citrus_test" --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      MIKAN_TEST_DATABASE_URL: postgres://citrus_test:citrus_test@localhost:5432/citrus_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: "1.27"
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+      - run: pnpm --dir web install --frozen-lockfile
+      - run: pnpm --dir web build
+      - run: go test ./internal/panel/features ./internal/panel/billing ./internal/panel/subs ./internal/panel/citrusbot ./internal/panel/app ./internal/node -run Citrus -count=1 -timeout 180s
+      - run: python3 scripts/test_backup_manifest.py
+      - run: bash -n citrus
+      - run: go build ./cmd/mikan && go build ./cmd/mikan-node

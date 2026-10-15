@@ -258,6 +258,8 @@ func (b *Bot) paid(ctx context.Context, chat int64, p events.Payment, u db.User)
 	w := wordsFor(b.lang(ctx))
 	var text string
 	switch {
+	case p.Kind == billing.KindDevice:
+		text = "Оплата получена: добавлено одно устройство. Срок подписки не изменился."
 	case p.Kind == billing.KindPackage:
 		text = fmt.Sprintf(w.paidPackage, html.EscapeString(p.TariffName), html.EscapeString(u.Name))
 	case p.Created:
@@ -285,6 +287,8 @@ func (b *Bot) refunded(ctx context.Context, chat int64, p events.Payment, u db.U
 	switch {
 	case u.ID == 0:
 		text = fmt.Sprintf(w.refundedGone, html.EscapeString(p.TariffName))
+	case p.Kind == billing.KindDevice:
+		text = "Деньги возвращены. Дополнительное устройство снято с подписки."
 	case p.Kind == billing.KindPackage:
 		text = fmt.Sprintf(w.refundedPackage, html.EscapeString(p.TariffName), html.EscapeString(u.Name))
 	case p.Disabled:

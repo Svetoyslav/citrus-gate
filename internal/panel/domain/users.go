@@ -265,6 +265,10 @@ func (s *Users) Purchase(ctx context.Context, q *db.Queries, in PurchaseInput) (
 	if !billingDay.Valid {
 		billingDay = u.BillingDay
 	}
+	t.DeviceLimit, err = q.CitrusDeviceBonus(ctx, u.ID, t.DeviceLimit)
+	if err != nil {
+		return u, false, err
+	}
 	u, err = q.UpdateUser(ctx, db.UpdateUserParams{
 		Name: u.Name, Contact: u.Contact, Note: u.Note, Tags: u.Tags, Status: "active", TariffID: sql.NullInt64{Int64: t.ID, Valid: true},
 		TrafficLimit: t.TrafficLimit, DeviceLimit: t.DeviceLimit, SpeedLimit: t.SpeedLimit, ResetStrategy: t.ResetStrategy, PeriodDays: u.PeriodDays, PeriodStart: u.PeriodStart,
@@ -460,6 +464,10 @@ func (s *Users) updateOn(ctx context.Context, q *db.Queries, id int64, p Patch) 
 		}
 		if err != nil {
 			return db.User{}, err
+		}
+		t.DeviceLimit, err = q.CitrusDeviceBonus(ctx, u.ID, t.DeviceLimit)
+		if err != nil {
+			return u, err
 		}
 		par.TariffID = sql.NullInt64{Int64: t.ID, Valid: true}
 		par.TrafficLimit, par.DeviceLimit, par.ResetStrategy, par.BillingDay = t.TrafficLimit, t.DeviceLimit, t.ResetStrategy, t.BillingDay

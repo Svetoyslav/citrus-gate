@@ -21,6 +21,7 @@ import (
 
 	"mikan/internal/panel/billing"
 	"mikan/internal/panel/domain"
+	"mikan/internal/panel/features"
 	"mikan/internal/panel/panelimport"
 	"mikan/internal/panel/promo"
 	"mikan/internal/panel/server"
@@ -32,6 +33,7 @@ import (
 
 // Config is resolved per request, so settings changes apply without a restart.
 type Config struct {
+	Features   features.Config
 	Brand      string
 	SupportURL string
 	// Title is the profile's name in the apps (Profile-Title); "" names it Brand. Title and
@@ -185,7 +187,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method != http.MethodGet && r.Method != http.MethodHead:
 		server.NotFound(w)
 		return
-	case (strings.HasPrefix(p, "assets/") || p == "favicon.png" || p == "apple-touch-icon.png") && h.page != nil:
+	case (strings.HasPrefix(p, "assets/") || p == "favicon.png" || p == "citrus.svg" || p == "apple-touch-icon.png") && h.page != nil:
 		h.page.ServeHTTP(w, r)
 		return
 	case token == "brand" && h.pages != nil:
@@ -310,10 +312,37 @@ func (h *Handler) serveProfile(w http.ResponseWriter, r *http.Request, u db.User
 		h.warn("skip/"+strconv.FormatInt(in.ID, 10)+"/"+err.Error(), "subscription: an inbound is left out of the profiles", "inbound", in.Name, "err", err)
 	}
 	app := DetectApp(r.Header.Get("User-Agent"))
-	prof.Inbounds = forApp(prof.Inbounds, app, domain.State(u, grants.Main(u.ID), h.now()))
+	state := domain.State(u, grants.Main(u.ID), h.now())
+	if cfg.Features.Grace(u, h.now()) {
+		state = domain.StateActive
+		kept := []db.Inbound{}
+		for _, in := range prof.Inbounds {
+			if in.ID == cfg.Features.GraceInbound && GraceProtocol(in) {
+				kept = append(kept, in)
+			}
+		}
+		prof.Inbounds = kept
+	}
+	prof.Inbounds = forApp(prof.Inbounds, app, state)
+	if domain.CanConnect(state) && !cfg.Features.Grace(u, h.now()) {
+		if err := h.addExternal(r.Context(), &prof, u, app); err != nil {
+			internalError(w)
+			return
+		}
+	}
 	// The block detector trusts a device only once it took a profile with an inbound's
 	// current port and target (see autotune.Detect).
 	_ = h.st.Q.RecordSubFetch(r.Context(), db.RecordSubFetchParams{UserID: u.ID, Ip: h.clientIP(r), FetchedAt: h.now().Unix()})
+	if format == "xray" || cfg.Features.XrayAuto && app.Family == FamilyXray && r.URL.Query().Get("format") == "" && format != "clash" && format != "singbox" {
+		body, err := XrayAuto(prof, cfg.Features.AutoName)
+		if err != nil {
+			h.profileFailed(w, u, cfg, format, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write(body)
+		return
+	}
 	switch format {
 	case "clash":
 		prof.Rules = RulesFor(cfg.Rules, app)
@@ -821,6 +850,8 @@ var linkApps = []string{"streisand", "shadowrocket", "foxray"}
 // by the family DetectApp makes of it, so the two never disagree about an app.
 func Format(userAgent, accept, query string) string {
 	switch strings.ToLower(query) {
+	case "xray", "json":
+		return "xray"
 	case "clash", "mihomo", "yaml":
 		return "clash"
 	case "uri", "v2ray", "base64":

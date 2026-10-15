@@ -39,7 +39,7 @@ func (t *Tunnel) HandleTCPConn(conn net.Conn, m *C.Metadata) {
 		t.inner.HandleTCPConn(conn, m)
 		return
 	}
-	if !t.reg.admitFrom(m.SrcIP) {
+	if !t.reg.graceAllows(userOf(conn, m), m) || !t.reg.admitFrom(m.SrcIP) {
 		_ = conn.Close()
 		return
 	}
@@ -93,7 +93,7 @@ func (t *Tunnel) HandleUDPPacket(p C.UDPPacket, m *C.Metadata) {
 		t.inner.HandleUDPPacket(p, m)
 		return
 	}
-	if !t.reg.admitFrom(m.SrcIP) {
+	if !t.reg.graceAllows(m.InUser, m) || !t.reg.admitFrom(m.SrcIP) {
 		p.Drop()
 		return
 	}
@@ -149,6 +149,9 @@ type countingConn struct {
 }
 
 func (c *countingConn) Read(b []byte) (int, error) {
+	if until := c.slot.graceUntil.Load(); until > 0 && c.now().Unix() >= until {
+		return 0, net.ErrClosed
+	}
 	n, err := c.Conn.Read(b)
 	if n > 0 {
 		c.slot.countIn(c.bucket, int64(n), 0)
@@ -157,6 +160,9 @@ func (c *countingConn) Read(b []byte) (int, error) {
 }
 
 func (c *countingConn) Write(b []byte) (int, error) {
+	if until := c.slot.graceUntil.Load(); until > 0 && c.now().Unix() >= until {
+		return 0, net.ErrClosed
+	}
 	n, err := c.Conn.Write(b)
 	if n > 0 {
 		c.slot.countIn(c.bucket, 0, int64(n))

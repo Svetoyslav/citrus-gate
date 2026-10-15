@@ -91,6 +91,7 @@ type ValidateRequest struct {
 }
 
 type Policy struct {
+	GraceUntil     int64    `json:"grace_until,omitempty"`
 	Slot           string   `json:"slot"`
 	Allowed        bool     `json:"allowed"`
 	Inbounds       []string `json:"inbounds,omitempty"` // allowed inbound names; empty = all

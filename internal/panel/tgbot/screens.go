@@ -186,7 +186,7 @@ func (b *Bot) welcome(ctx context.Context, cfg Config, w *words, chat int64, not
 
 // menu is the admin's main menu as buttons.
 func (b *Bot) menu(ctx context.Context, cfg Config, w *words, chat int64, subs int) *tgate.Keyboard {
-	var rows [][]tgate.Button
+	rows := [][]tgate.Button{{{Text: "Пригласить друзей", CallbackData: "cg:ref"}, {Text: "+1 устройство", CallbackData: "cg:devices"}}}
 	for _, mb := range cfg.Buttons {
 		if !mb.On {
 			continue

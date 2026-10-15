@@ -419,7 +419,7 @@ func policyShape(ps []nodeapi.Policy) string {
 			pools = append(pools, q.Pool+strconv.FormatBool(q.Remaining < 0))
 		}
 		_ = enc.Encode([]any{p.Slot, p.Allowed, p.Inbounds, p.DeviceLimit, p.QuotaRemaining < 0, p.OtherIPs, pools,
-			p.TorrentExempt, p.BannedUntil, p.SpeedMbps, p.Group})
+			p.TorrentExempt, p.BannedUntil, p.SpeedMbps, p.Group, p.GraceUntil})
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

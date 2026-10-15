@@ -728,6 +728,16 @@ func (s *Service) PreCheckout(ctx context.Context, tgID int64, payload, currency
 			return ErrBadPayment
 		}
 	}
+	if p.Kind == KindDevice {
+		offer, err := s.DeviceOffer(ctx, p.UserID.Int64)
+		if err != nil {
+			return err
+		}
+		if offer.Stars == 0 && offer.Rub == 0 {
+			return ErrNotForSale
+		}
+		return nil
+	}
 	if p.Kind == KindPackage {
 		return s.packageOnSale(ctx, p)
 	}
@@ -877,6 +887,12 @@ func (s *Service) Apply(ctx context.Context, id int64) error {
 			done = true
 			return nil
 		}
+		if pay.Kind == KindDevice {
+			if u, err = s.applyDevice(ctx, q, pay); err != nil {
+				return err
+			}
+			return markApplied(ctx, q, id, u.ID, s.d.Now())
+		}
 		if pay.Kind == KindPackage {
 			if u, err = s.applyPackage(ctx, q, pay); err != nil {
 				return err
@@ -930,6 +946,9 @@ func (s *Service) Apply(ctx context.Context, id int64) error {
 			}
 		}
 		if err := markApplied(ctx, q, id, u.ID, s.d.Now()); err != nil {
+			return err
+		}
+		if err := s.rewardReferral(ctx, q, pay); err != nil {
 			return err
 		}
 		return q.SetPaymentRevert(ctx, db.SetPaymentRevertParams{Revert: purchaseRevert(created, hadPrior, prior, u), ID: id})

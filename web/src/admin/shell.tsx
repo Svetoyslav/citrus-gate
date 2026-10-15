@@ -54,7 +54,7 @@ export function Shell() {
         <aside className="sidebar glass" aria-label={t("shell.sidebar")}>
           <div className="brand">
             <Logo />
-            <span className="brand-name">mikan</span>
+            <span className="brand-name">Citrus Gate</span>
             <button type="button" className="icon-btn fold-btn" onClick={fold} aria-label={foldLabel} title={foldLabel}>
               {folded ? <PanelLeftOpen size={18} aria-hidden /> : <PanelLeftClose size={18} aria-hidden />}
             </button>
@@ -68,6 +68,7 @@ export function Shell() {
               </Link>
             ))}
           </nav>
+          <Link to="/citrus" className="nav-item">Возможности Citrus Gate</Link>
           <div className="side-foot">
             <UpdateChip />
             <NodeCard />

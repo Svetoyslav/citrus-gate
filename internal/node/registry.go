@@ -41,10 +41,11 @@ type slot struct {
 	name, uuid string
 	shared     bool // a listener's one key for everyone: no devices, no counters
 
-	up, down  atomic.Int64 // counted but not yet cut into a batch
-	quotaOn   atomic.Bool
-	remaining atomic.Int64
-	blocked   atomic.Bool // !allowed; read on every connection (exhausted quotas are per bucket)
+	up, down   atomic.Int64 // counted but not yet cut into a batch
+	quotaOn    atomic.Bool
+	remaining  atomic.Int64
+	graceUntil atomic.Int64
+	blocked    atomic.Bool // !allowed; read on every connection (exhausted quotas are per bucket)
 	// The torrent blocker: the slot is let alone, or kept out until the panel's ban or
 	// the node's own short one ends (unix seconds).
 	torrentExempt atomic.Bool
@@ -162,6 +163,11 @@ func (r *Registry) SetPolicies(epoch string, list []nodeapi.Policy) {
 		g.own.Store(own)
 		s.group.Store(g)
 		s.mu.Lock()
+		oldGrace := s.graceUntil.Load()
+		s.graceUntil.Store(p.GraceUntil)
+		if oldGrace != p.GraceUntil {
+			toClose = append(toClose, s.connsLocked()...)
+		}
 		s.allowed = ok && p.Allowed
 		s.inbounds = nil
 		s.deviceLimit = 0

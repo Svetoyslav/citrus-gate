@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# Citrus Gate source-build launcher. Requires Linux, Docker Compose, Python 3 and tar.
+set -Eeuo pipefail
+cd -- "$(dirname -- "$(readlink -f -- "$0")")"
+ROOT=$PWD
+dc(){ docker compose --env-file .env -f compose.citrus.yaml "$@"; }
+need(){ command -v "$1" >/dev/null || { echo "Required: $1" >&2; exit 1; }; }
+need docker; need python3; need tar
+mkdir -p state
+chmod 700 state
+exec 9>state/operation.lock
+need flock
+flock -n 9 || { echo 'Another Citrus Gate operation is running.' >&2; exit 1; }
+build(){ docker build --build-arg VERSION=citrus-gate-1.0 -t citrus-gate:1.0 .; }
+waitdb(){ dc up -d --wait postgres; }
+health(){ dc up -d --wait --wait-timeout 180 node panel; }
+dump(){ dc exec -T postgres sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h /run/postgresql -U mikan -d mikan -Fc --no-owner --no-acl'; }
+backup(){
+ local output=$1
+ [[ ! -e "$output" ]] || { echo 'Backup already exists.' >&2; return 1; }
+ local stage; stage=$(mktemp -d "$ROOT/state/backup.XXXXXXXX")
+ dc stop panel node
+ trap 'dc start node panel >/dev/null || true' EXIT
+ dump >"$stage/db.dump"
+ cp .env compose.citrus.yaml "$stage/"
+ cp -a data "$stage/"
+ python3 scripts/backup_manifest.py create "$stage"
+ tar -czf "$output" -C "$stage" .env compose.citrus.yaml data db.dump manifest.json
+ chmod 600 "$output"
+ python3 scripts/backup_manifest.py verify "$output"
+ # Remove only the exact mktemp child created in this call.
+ [[ "$stage" == "$ROOT/state/backup."* ]] && rm -rf -- "$stage"
+}
+case "${1:-help}" in
+ install)
+  [[ ! -e .env ]] || { echo 'Already configured; use start or restore in an empty directory.' >&2; exit 1; }
+  host=${2:?Usage: ./citrus install HOST [PORT]}; port=${3:-2053}
+  [[ "$host" =~ ^[a-zA-Z0-9.:-]+$ && "$port" =~ ^[0-9]+$ ]] && ((port>0&&port<65536)) || exit 1
+  umask 077
+  password=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+  printf 'PANEL_PORT=%s\nMIKAN_POSTGRES_PASSWORD=%s\nMIKAN_DATABASE_URL=postgres://mikan:%s@localhost/mikan?host=/run/postgresql\n' "$port" "$password" "$password" >.env
+  unset password
+  mkdir -p data/panel data/node; chown -R 65532:65532 data; chmod 700 data data/panel data/node
+  build; waitdb
+  args=(admin bootstrap --public-host "$host" --port "$port" --lang ru)
+  if [[ "$host" =~ [a-zA-Z] ]]; then args+=(--domain "$host"); fi
+  dc run --rm --no-deps -T panel "${args[@]}"
+  health
+  ;;
+ node)
+  [[ ! -e .env ]] || { echo "Use a separate source directory for a remote node." >&2; exit 1; }
+  key=${2:?Usage: ./citrus node JOIN_KEY}
+  [[ "$key" =~ ^[A-Za-z0-9_+/=:.%-]+$ ]] || { echo "Invalid join key." >&2; exit 1; }
+  umask 077; printf 'MIKAN_NODE_JOIN=%s\n' "$key" >.node.env; unset key
+  mkdir -p data/node; chown -R 65532:65532 data; chmod 700 data data/node
+  build
+  docker compose --env-file .node.env -f compose.node.citrus.yaml up -d --wait
+  ;;
+ build) build ;;
+ start) health ;;
+ stop) dc stop panel node ;;
+ status) dc ps ;;
+ logs) dc logs -f --tail=100 "${2:-panel}" ;;
+ url) dc exec -T panel mikan admin url ;;
+ reset-password) dc exec -it panel mikan admin reset-password ;;
+ backup)
+  backup "${2:?Usage: ./citrus backup /absolute/path/backup.tar.gz}"
+  dc start node panel; trap - EXIT
+  ;;
+ restore)
+  archive=$(readlink -f -- "${2:?Usage: ./citrus restore BACKUP.tar.gz}")
+  [[ ! -e .env && ! -d data ]] || { echo 'Restore requires a fresh project directory.' >&2; exit 1; }
+  python3 scripts/backup_manifest.py verify "$archive"
+  # Validation rejects symlinks, hard links, traversal and unexpected files before extraction.
+  tar --no-same-owner --no-same-permissions -xzf "$archive"
+  chmod 600 .env; chown -R 65532:65532 data; chmod 700 data data/panel data/node
+  docker image inspect citrus-gate:1.0 >/dev/null 2>&1 || build
+  waitdb
+  dc exec -T postgres sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_restore -h /run/postgresql -U mikan -d mikan --clean --if-exists --single-transaction --exit-on-error --no-owner --no-acl' <db.dump
+  health
+  echo 'Restored. Move the domain DNS to this server, then check node addresses and subscriptions.'
+  ;;
+ move)
+  target=${2:?Usage: ./citrus move root@NEW_HOST}
+  [[ "$target" =~ ^root@[a-zA-Z0-9.-]+$ ]] || { echo 'Use root@HOST; set up SSH access first.' >&2; exit 1; }
+  need ssh; need scp
+  [[ $(uname -m) == $(ssh -o BatchMode=yes "$target" uname -m) ]] || { echo "Source and destination CPU architectures must match." >&2; exit 1; }
+  ssh -o BatchMode=yes "$target" 'command -v docker >/dev/null && command -v python3 >/dev/null && command -v flock >/dev/null && test ! -e /opt/citrus-gate && mkdir -m 700 /opt/citrus-gate'
+  tar --exclude='./.git' --exclude='./data' --exclude='./state' --exclude='./.env' --exclude='./web/node_modules' --exclude='./web/dist' -czf state/source.tar.gz .
+  docker save citrus-gate:1.0 | gzip >state/image.tar.gz
+  backup "$ROOT/state/move-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+  archive=$(find "$ROOT/state" -maxdepth 1 -name 'move-*.tar.gz' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)
+  scp -- state/source.tar.gz state/image.tar.gz "$archive" "$target:/opt/citrus-gate/"
+  ssh "$target" 'cd /opt/citrus-gate && tar -xzf source.tar.gz && gzip -dc image.tar.gz | docker load && chmod +x citrus && ./citrus restore "$(find . -maxdepth 1 -name "move-*.tar.gz" -print -quit)"'
+  trap - EXIT
+  echo 'New server is running. Source panel and node remain stopped. Move DNS; verify subscriptions and remote node connectivity. To roll back: stop the new panel, restore DNS and run ./citrus start on this server.'
+  ;;
+ *) echo 'Citrus Gate: install HOST [PORT] | node JOIN_KEY | build | start | stop | status | logs [panel|node] | url | reset-password | backup FILE | restore FILE | move root@HOST' ;;
+esac

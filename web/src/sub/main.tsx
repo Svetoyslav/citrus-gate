@@ -12,6 +12,7 @@ import { APPS } from "./apps";
 import { hashParams, initData, json, okData, openOutside, pageURL, postJSON, request, subRoot, tgEvent, tgMode, tokenOf } from "./net";
 import { applyLook, readPage, titleOf, type DocView } from "./page";
 import { FreePlan, loadShop, Shop, type ShopData } from "./shop";
+import { CitrusSubscriber } from "./citrus";
 import { PromoSection } from "./promo";
 import { ReissueSection } from "./reissue";
 import type { Info, TgSub } from "./types";
@@ -365,6 +366,7 @@ function SubPage() {
   if (docId !== null) {
     return (
       <Shell brand={current.brand}>
+      {tgMode ? <CitrusSubscriber key={token} token={token}/> : null}
         <DocScreen
           key={docId}
           item={page.docs.find((d) => d.id === docId)}

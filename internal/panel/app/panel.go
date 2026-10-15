@@ -25,9 +25,11 @@ import (
 	"mikan/internal/panel/autotune"
 	"mikan/internal/panel/billing"
 	"mikan/internal/panel/checkhost"
+	"mikan/internal/panel/citrusbot"
 	"mikan/internal/panel/dnscheck"
 	"mikan/internal/panel/domain"
 	"mikan/internal/panel/events"
+	"mikan/internal/panel/features"
 	"mikan/internal/panel/infraalerts"
 	"mikan/internal/panel/nodesync"
 	"mikan/internal/panel/nodeupdate"
@@ -59,6 +61,7 @@ type Panel struct {
 	NodeUpdates *nodeupdate.Service
 	// Gateway is the panel's side of Telegram: the token, polling, Stars, the alerts' way
 	// out; Telegram is the admin's setup of the bot, its notices and broadcasts on top of it.
+	CitrusBot *citrusbot.Handler
 	Gateway   *tgate.Gateway
 	Telegram  *tgbot.Panel
 	Billing   *billing.Service
@@ -162,8 +165,7 @@ func NewPanel(st *store.Store, o Options) (*Panel, error) {
 		changes = p.Nodes
 		deps.Online = p.Nodes.Online
 		deps.Nodes = p.Nodes
-		p.NodeUpdates = nodeupdate.New(st, set, p.Nodes, o.Version, o.Log, o.Now)
-		deps.NodeUpdates = p.NodeUpdates
+		// Citrus Gate nodes are updated from this source build, never from official Mikan releases.
 		tune := o.Autotune
 		if tune == (autotune.Options{}) {
 			tune = autotune.DefaultOptions()
@@ -268,7 +270,11 @@ func NewPanel(st *store.Store, o Options) (*Panel, error) {
 	}
 	p.Telegram = tgbot.NewPanel(tgbot.PanelDeps{Backend: backend, Outbox: p.Gateway.Outbox, Emit: emit, Log: o.Log, Now: o.Now})
 	// The updates wait in the buffer for the addon that holds the bot.
-	p.Gateway.SetHandler(p.AddonsAPI.BotSlot())
+	p.CitrusBot = citrusbot.New(st, set, p.Gateway, p.Billing, deps.Users, deps.Devices, backend, o.Now, o.Log)
+	p.Gateway.SetHandler(p.CitrusBot)
+	if p.Nodes != nil {
+		p.CitrusBot.SetNodesChanged(p.Nodes.NodesChanged)
+	}
 	deps.Telegram, deps.Gateway = p.Telegram, p.Gateway
 	p.Billing.SetTelegram(p.Gateway)
 	p.Billing.SetNotifier(tgbot.Notifications{Emit: emit, Log: o.Log})
@@ -354,7 +360,11 @@ func NewPanel(st *store.Store, o Options) (*Panel, error) {
 				return subs.Config{}, err
 			}
 		}
-		cfg := subs.Config{Brand: brand, SupportURL: support, Groups: groups, Routing: subs.ParseRouting(routing), Fingerprint: fingerprint,
+		featureCfg, err := features.Load(ctx, set)
+		if err != nil {
+			return subs.Config{}, err
+		}
+		cfg := subs.Config{Features: featureCfg, Brand: brand, SupportURL: support, Groups: groups, Routing: subs.ParseRouting(routing), Fingerprint: fingerprint,
 			Direct: []string{publicHost, domainName}, Lang: lang, Rules: subs.ServedRules(rules, groups.WithDefaults(lang))}
 		if cfg.Routes, _, err = settings.Get[subs.Routes](ctx, set, settings.KeyRoutes); err != nil {
 			return subs.Config{}, err
@@ -522,7 +532,8 @@ func (p *Panel) Run(ctx context.Context) {
 	if p.NodeUpdates != nil {
 		workers = append(workers, p.NodeUpdates.Run)
 	}
-	workers = append(workers, p.Gateway.Run, p.Telegram.Run, p.Billing.Run, p.AddonsAPI.Run, p.AddonsAPI.RunPush, (&botAddon{p: p}).Run, p.Updates.Run, p.Alerts.Run, p.Backups.Run, p.Importer.Run,
+	workers = append(workers, func(ctx context.Context) { subs.RunExternal(ctx, p.st, p.now, p.log) })
+	workers = append(workers, p.Gateway.Run, p.Telegram.Run, p.Billing.Run, p.AddonsAPI.Run, p.AddonsAPI.RunPush, p.CitrusBot.Run, p.Updates.Run, p.Alerts.Run, p.Backups.Run, p.Importer.Run,
 		func(ctx context.Context) {
 			every(ctx, 5*time.Second, func() {
 				if _, err := p.Apply(ctx); err != nil {

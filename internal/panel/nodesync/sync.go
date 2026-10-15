@@ -473,7 +473,22 @@ func (s *Syncer) policiesFrom(snap *snapshot) (epoch string, out []nodeapi.Polic
 		sort.Strings(names)
 		for _, name := range names {
 			p := userPolicy(u, grants.Main(u.ID), name, seq, now, here, shut[u.ID], others[name])
+			if snap.features.Grace(u, now) {
+				p.Allowed = false
+				if in, ok := here[snap.features.GraceInbound]; ok && !shut[u.ID][snap.features.GraceInbound] {
+					allowed := domain.DecodeInbounds(u.Inbounds)
+					if len(allowed) == 0 || slices.Contains(allowed, snap.features.GraceInbound) {
+						p.Allowed = true
+						p.Inbounds = []string{in}
+						p.QuotaRemaining = -1
+						p.GraceUntil = u.ExpiresAt.Int64 + 86400
+					}
+				}
+			}
 			p.Pools = pools[u.ID]
+			if p.GraceUntil > 0 {
+				p.Pools = nil
+			}
 			p.TorrentExempt = snap.torrent.IsExempt(u.ID)
 			if !p.TorrentExempt {
 				// A user added to the exemptions after a catch is let in at once.
@@ -830,7 +845,7 @@ func policyKey(ps []nodeapi.Policy) string {
 	h := sha256.New()
 	for _, p := range ps {
 		raw, _ := json.Marshal([]any{p.Slot, p.Allowed, p.Inbounds, p.DeviceLimit, p.QuotaRemaining < 0, p.OtherIPs, poolKey(p.Pools),
-			p.TorrentExempt, p.BannedUntil, p.SpeedMbps, p.Group})
+			p.TorrentExempt, p.BannedUntil, p.SpeedMbps, p.Group, p.GraceUntil})
 		h.Write(raw)
 	}
 	return hex.EncodeToString(h.Sum(nil))

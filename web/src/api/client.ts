@@ -16,6 +16,10 @@ const base = new URL("./", document.baseURI);
 export const basePath = base.pathname.replace(/\/$/, "");
 
 let csrfToken = "";
+export async function citrusAPI<T>(path: string, method = "GET", body?: unknown): Promise<T> {
+ const response = await fetch(basePath + "/api/v1/citrus/" + path, {method, credentials:"same-origin", headers:{"Content-Type":"application/json","X-CSRF-Token":csrfToken}, ...(body===undefined?{}:{body:JSON.stringify(body)})});
+ if(!response.ok) {const data=await response.json().catch(()=>({}));throw new Error(data.detail || `HTTP ${response.status}`)};return response.status===204?undefined as T:response.json() as Promise<T>;
+}
 export function setCsrf(token: string) {
   csrfToken = token;
 }

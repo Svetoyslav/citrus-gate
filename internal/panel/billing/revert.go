@@ -85,6 +85,9 @@ type Reverted struct {
 // after it (zero when the payment's subscription is gone).
 func (s *Service) takeBack(ctx context.Context, q *db.Queries, p db.Payment) (rv Reverted, u db.User, err error) {
 	rv.Action = "none"
+	if err = s.reverseReferral(ctx, q, p); err != nil {
+		return rv, u, err
+	}
 	if s.d.Promo != nil {
 		if rv.PromoReleased, err = s.d.Promo.ReleaseApplied(ctx, q, p.ID); err != nil {
 			return rv, u, err
@@ -97,6 +100,22 @@ func (s *Service) takeBack(ctx context.Context, q *db.Queries, p db.Payment) (rv
 		return rv, db.User{}, nil
 	} else if err != nil {
 		return rv, u, err
+	}
+	if p.Kind == KindDevice {
+		res, e := q.CitrusSQL().ExecContext(ctx, "DELETE FROM cg_device_grants WHERE payment_id=$1", p.ID)
+		if e != nil {
+			return rv, u, e
+		}
+		n, _ := res.RowsAffected()
+		if n > 0 {
+			_, e = q.CitrusSQL().ExecContext(ctx, "UPDATE users SET device_limit=GREATEST(1,device_limit-1),updated_at=$2 WHERE id=$1 AND device_limit IS NOT NULL", u.ID, s.d.Now().Unix())
+		}
+		rv.Action = "device"
+		if e != nil {
+			return rv, u, e
+		}
+		u, e = q.GetUser(ctx, u.ID)
+		return rv, u, e
 	}
 	if p.Kind == KindPackage {
 		// The grant goes whole: what was used of it is already counted as used.
