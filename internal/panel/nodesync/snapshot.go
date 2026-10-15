@@ -100,7 +100,11 @@ func (m *Manager) readSnapshot(ctx context.Context) (s *snapshot, err error) {
 		for _, in := range s.inbounds {
 			if in.ID == s.features.GraceInbound && in.Enabled != 0 {
 				t, e := proto.Parse(in.Config)
-				valid = e == nil && !proto.Shared(t.Type())
+				n, nodeErr := q.GetNode(ctx, in.NodeID)
+				if nodeErr != nil {
+					return nil, nodeErr
+				}
+				valid = e == nil && !proto.Shared(t.Type()) && n.Enabled != 0
 			}
 		}
 		if !valid {

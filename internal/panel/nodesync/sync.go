@@ -481,7 +481,7 @@ func (s *Syncer) policiesFrom(snap *snapshot) (epoch string, out []nodeapi.Polic
 						p.Allowed = true
 						p.Inbounds = []string{in}
 						p.QuotaRemaining = -1
-						p.GraceUntil = u.ExpiresAt.Int64 + 86400
+						p.GraceUntil = snap.features.GraceUntil(u)
 					}
 				}
 			}

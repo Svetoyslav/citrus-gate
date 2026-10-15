@@ -16,6 +16,13 @@ import (
 type CitrusFeatureSettings features.Config
 type citrusConfigOutput struct{ Body CitrusFeatureSettings }
 type citrusConfigInput struct{ Body CitrusFeatureSettings }
+type citrusGraceOption struct {
+	ServerID    int64  `json:"server_id"`
+	ServerName  string `json:"server_name"`
+	InboundID   int64  `json:"inbound_id"`
+	InboundName string `json:"inbound_name"`
+}
+type citrusGraceOptionsOutput struct{ Body []citrusGraceOption }
 type citrusSourcesOutput struct{ Body []db.CitrusSource }
 type citrusSourceInput struct {
 	Body struct {
@@ -30,6 +37,35 @@ type citrusSourceInput struct {
 
 func (h *handlers) registerCitrus() {
 	op := sessionOps("citrus")
+	huma.Register(h.api, op("citrus-grace-options", http.MethodGet, "/api/v1/citrus/grace-options", "Серверы и подключения для продления", 0), func(ctx context.Context, _ *struct{}) (*citrusGraceOptionsOutput, error) {
+		nodes, err := h.d.Store.Q.ListNodes(ctx)
+		if err != nil {
+			return nil, err
+		}
+		inbounds, err := h.d.Store.Q.ListInbounds(ctx)
+		if err != nil {
+			return nil, err
+		}
+		out := []citrusGraceOption{}
+		for _, n := range nodes {
+			if n.Enabled == 0 {
+				continue
+			}
+			name := n.Name
+			if strings.TrimSpace(name) == "" {
+				name = n.PublicHost
+				if name == "" {
+					name = "Сервер панели"
+				}
+			}
+			for _, in := range inbounds {
+				if in.NodeID == n.ID && in.Enabled != 0 && subs.GraceProtocol(in) {
+					out = append(out, citrusGraceOption{n.ID, name, in.ID, in.Name})
+				}
+			}
+		}
+		return &citrusGraceOptionsOutput{out}, nil
+	})
 	huma.Register(h.api, op("citrus-config", http.MethodGet, "/api/v1/citrus/settings", "Настройки Citrus Gate", 0), func(ctx context.Context, _ *struct{}) (*citrusConfigOutput, error) {
 		c, e := features.Load(ctx, h.d.Settings)
 		return &citrusConfigOutput{CitrusFeatureSettings(c)}, e
@@ -46,6 +82,10 @@ func (h *handlers) registerCitrus() {
 			i, e := h.d.Store.Q.GetInbound(ctx, c.GraceInbound)
 			if e != nil || i.Enabled == 0 || !subs.GraceProtocol(i) {
 				return nil, huma.Error400BadRequest("grace_requires_enabled_personal_protocol")
+			}
+			n, e := h.d.Store.Q.GetNode(ctx, i.NodeID)
+			if e != nil || n.Enabled == 0 {
+				return nil, huma.Error400BadRequest("grace_requires_enabled_server")
 			}
 		}
 		if e := settings.Set(ctx, h.d.Settings, features.Key, c); e != nil {
